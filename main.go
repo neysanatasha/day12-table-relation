@@ -5,19 +5,46 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"my-project/config"
 	"my-project/middleware"
-
-	"net/http"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// Project Struct
+type Project struct {
+	ID           int
+	ProjectName  string
+	StartDate    time.Time
+	EndDate      time.Time
+	Duration     string
+	Description  string
+	Technologies []string
+	Image        string
+	UserId       int
+}
+type MetaData struct {
+	Id        int
+	IsLogin   bool
+	UserName  string
+	FlashData string
+}
+
+var Data = MetaData{}
+
+type User struct {
+	Id       int
+	Name     string
+	Email    string
+	Password string
+}
 
 func main() {
 	route := mux.NewRouter()
@@ -59,34 +86,6 @@ func main() {
 	http.ListenAndServe("localhost:"+port, route)
 }
 
-// Project Struct
-type Project struct {
-	ID           int
-	ProjectName  string
-	StartDate    time.Time
-	EndDate      time.Time
-	Duration     string
-	Description  string
-	Technologies []string
-	Image        string
-	UserId       int
-}
-type MetaData struct {
-	Id        int
-	IsLogin   bool
-	UserName  string
-	FlashData string
-}
-
-var Data = MetaData{}
-
-type User struct {
-	Id       int
-	Name     string
-	Email    string
-	Password string
-}
-
 // home
 func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "text/html; charset=utf-8")
@@ -99,14 +98,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 	// Session
 	var store = sessions.NewCookieStore([]byte("SESSIONS_ID"))
 	session, _ := store.Get(r, "SESSIONS_ID")
-
-	if session.Values["IsLogin"] != true {
-		Data.IsLogin = false
-	} else {
-		Data.IsLogin = session.Values["IsLogin"].(bool)
-		Data.UserName = session.Values["Name"].(string)
-		Data.Id = session.Values["Id"].(int)
-	}
 
 	fm := session.Flashes("message")
 
@@ -122,7 +113,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 	// Project slice to hold data from returned rowsData.
 	var resultData []Project
 
-	if session.Values["Id"] != nil {
+	if session.Values["IsLogin"] != true {
 		Data.IsLogin = false
 		// Query to database
 		rowsData, err := config.Conn.Query(context.Background(), "SELECT id, project_name, start_date, end_date, description, technologies, image FROM tb_projects")
@@ -148,9 +139,12 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 		// fmt.Println(resultData)
 	} else {
-		user_id := session.Values["Id"].(int)
+		Data.IsLogin = session.Values["IsLogin"].(bool)
+		Data.UserName = session.Values["Name"].(string)
+		Data.Id = session.Values["Id"].(int)
+		// user_id := session.Values["Id"].(int)
 		resultData = []Project{}
-		rowsData, err := config.Conn.Query(context.Background(), "SELECT tb_projects.id, project_name, start_date, end_date, description, technologies, image FROM tb_projects LEFT JOIN tb_users ON tb_projects.user_id = tb_users.id where tb_projects.id_user =$1", user_id)
+		rowsData, err := config.Conn.Query(context.Background(), "SELECT tb_projects.id, project_name, start_date, end_date, description, technologies, image FROM tb_projects LEFT JOIN tb_users ON tb_projects.user_id = tb_users.id where tb_projects.user_id =$1", Data.Id)
 		if err != nil {
 			fmt.Println("Message : 3" + err.Error())
 			return
@@ -159,7 +153,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 		// Loop through rowsData, using Scan to assign column data to struct fields.
 		for rowsData.Next() {
 			var each = Project{}
-			err := rowsData.Scan(&each.ID, &each.ProjectName, &each.StartDate, &each.EndDate, &each.Technologies, &each.Description, &each.Image, &each.UserId)
+			err := rowsData.Scan(&each.ID, &each.ProjectName, &each.StartDate, &each.EndDate, &each.Description, &each.Technologies, &each.Image)
 			if err != nil {
 				fmt.Println("Message : 4" + err.Error())
 				return
@@ -272,7 +266,7 @@ func detailProject(w http.ResponseWriter, r *http.Request) {
 	var resultData = Project{}
 
 	err = config.Conn.QueryRow(context.Background(), "SELECT * FROM tb_projects WHERE id=$1", id).Scan(
-		&resultData.ID, &resultData.ProjectName, &resultData.StartDate, &resultData.EndDate, &resultData.Technologies, &resultData.Description, &resultData.Image, &resultData.UserId,
+		&resultData.ID, &resultData.ProjectName, &resultData.StartDate, &resultData.EndDate, &resultData.Description, &resultData.Technologies, &resultData.Image, &resultData.UserId,
 	)
 	// add Duration result from calc of StartDate and EndDate
 	resultData.Duration = config.GetDurationTime(resultData.StartDate, resultData.EndDate)
@@ -327,7 +321,7 @@ func editProject(w http.ResponseWriter, r *http.Request) {
 	var resultData = Project{}
 
 	err = config.Conn.QueryRow(context.Background(), "SELECT * FROM tb_projects WHERE id=$1", id).Scan(
-		&resultData.ID, &resultData.ProjectName, &resultData.StartDate, &resultData.EndDate, &resultData.Technologies, &resultData.Description, &resultData.Image, &resultData.UserId,
+		&resultData.ID, &resultData.ProjectName, &resultData.StartDate, &resultData.EndDate, &resultData.Description, &resultData.Technologies, &resultData.Image, &resultData.UserId,
 	)
 
 	if err != nil {
